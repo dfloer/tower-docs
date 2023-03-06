@@ -23,6 +23,7 @@ class UnknownValues:
         values = [struct.unpack("<B", raw_data[res.__start_offset + x :  res.__start_offset + x + 1])[0] for x in range(length)]
         res.__values = values
         res.__end_offset = res.__start_offset + length
+        res.__length = len(res.values)
         return res
 
     @property
@@ -53,14 +54,11 @@ class GenericEntry:
         # Use __slots__ over dir() because the latter sorts, and this breaks ordering.
         for attr in [x for x in res.__slots__ if not x.startswith("_")]:
             parse_val = getattr(res, attr)
-            print(attr, parse_val)
-            if isinstance(parse_val, list):
-                continue
             val_len = struct_lens[parse_val[-1]]
             val = struct.unpack(parse_val, raw_data[offset : offset + val_len])[0]
             setattr(res, attr, val)
             offset += val_len
-            res.__length += 1
+            res.__length += val_len
         res.__end_offset = offset
         return res
 
@@ -107,16 +105,77 @@ class TowerMeta(GenericEntry):
     unknown_2: int = "<i"
 
 @define
-class FloorsData(GenericEntry):
-    floors: List = field(default=Factory(list), repr=False)
+class RepeatedGenericEntry(GenericEntry):
+    __start_offset: int = field(default=None, repr=False)
+    __end_offset: int = field(default=None, repr=False)
+    __entry_count: int = field(default=0, init=True)
+    # __entry_contents: List = field(init=False, repr=False)
+
+    @classmethod
+    def _parse(cls, start_offset: int, raw_data: Any, entry_count: int = 0) -> "RepeatedGenericEntry":
+        res = cls()
+        res.__entry_count = entry_count
+        res.__start_offset = start_offset
+        offset = start_offset
+        # The list of ("ClassName", entry_count) values to look up.
+        # entry_count can either be a number for hard-coded counts, or a lookup on a previously parsed header.
+        # This is pretty limited right now, but it works for the simplicity of the TDT files.
+        contents = getattr(res, f"_{res.__class__.__name__}__entry_contents")
+        print("Entry contents:", contents)
+        for cls_name, count in contents:
+            # The list *has* to be named "classnamelower_entries".
+            data_attr = f"{cls_name.lower()}_entries"
+            print(cls_name, count, type(cls_name), type(count))
+            # If we've got a bare count, we don't need to do a lookup first.
+            if isinstance(count, int):
+                pass
+            elif isinstance(count, str):
+                data_attr_name, data_attr_count = count.split('.')
+                print("str version", count)
+                for lookup in getattr(res, data_attr_name):
+                    print(lookup)
+                    count = getattr(lookup, data_attr_count)
+                    print(count)
+            for e_idx in range(count):
+                entry_cls = globals()[cls_name]
+                print(e_idx, type(entry_cls))
+                entry = entry_cls()._parse(offset, raw_data)
+                print(entry)
+                offset = entry.end_offset
+                l = getattr(res, data_attr)
+                l += [entry]
+                setattr(res, data_attr, l)
+
+
+                # count_lookup = 
+        # for attr in [x for x in res.__slots__ if not x.startswith("_")]:
+        #     parse_val = getattr(res, attr)
+        #     print(attr, parse_val)
+
+    @property
+    def start_offset(self) -> int:
+        return self.__start_offset
+
+    @property
+    def end_offset(self) -> int:
+        return self.__end_offset
+
+    def __len__(self) -> int:
+        return self.__length
+
+
+@define
+class FloorsData(RepeatedGenericEntry):
+    floor_entries: List = field(default=Factory(list), repr=False)
+    unit_entries: List = field(default=Factory(list), repr=False)
+    unknownvalues_entries: List = field(default=Factory(list), repr=False)
+    __entry_contents: List = field(default=(("Floor", 120), ("Unit", "floor_entries.unit_count"), ("UnknownValues", 188)), repr=False)
 
 @define
 class Floor(GenericEntry):
-    unit_count: int = "<h"
-    start: int = "<h"
-    end: int = "<h"
-    floor_number: int = field(default="<h", repr=floor_dbg)
-    units: List = field(default=Factory(list), repr=False)
+    unit_count: int = field(default="<h")
+    start: int = field(default="<h")
+    end: int = field(default="<h")
 
 @define
 class Unit(GenericEntry):
@@ -168,7 +227,7 @@ class Tower:
         start_offset = self.tower_header.end_offset
         # print(self.tower_header)
         print(f"Tower header final offset: {start_offset}")
-        self.floors = FloorsData._parse(start_offset, self._tower_raw_data)
+        self.floors = FloorsData._parse(start_offset, self._tower_raw_data, 120)
 
 
 
