@@ -12,11 +12,11 @@
 | 16 | 4 | Last Quarter Money | Last quarter's money from finances window. |
 | 20 | 2 | Timer | Seems to increment to ~2600 every day. |
 | 22 | 4 | Current Day | Current day, starting from WD1/Q1/Y1. |
-| 26 | 2 | Lobby Height | Ground floor lobby height: 1 = normal lobby, 2 = 2 story lobby, 3 = 3 story lobby |
+| 26 | 2 | unknown | |
+| 28 | 2 | Lobby Height | Ground floor lobby height: 1 = normal lobby, 2 = 2 story lobby, 3 = 3 story lobby |
 | 30 | 2 | unknown | |
 | 32 | 2 | unknown | |
 | 34 | 2 | unknown | |
-| 36 | 2 | unknown | |
 | 36 | 2 | unknown | |
 | 38 | 4 | Window Location | Game loads this as 4 bytes, but is actually the Window x position, then window y position. 0,0 is the top left corner. 2897, 4181 the bottom right with the smallest possible window size, 2184, 3744 with largest. |
 | 42 | 2 | Recycling Count | Total number of recycling centers in the building. |
@@ -26,11 +26,15 @@
 | 50 | 2 | Parking Stall Count | Total number of parking stalls, including unconnected (red X) ones. |
 | 52 | 2 | Medical Clinic Count | Total number of medical clinics. Maybe? |
 | 54 | 2 | Hall/Cinema Count | Count of all cinemas and party halls. |
-| 56 | 2 | unknown | |
-| 58 | 2 | unknown | |
+| 56 | 2 | Named Units | Count of units with a custom name. |
+| 58 | 2 | Named People | Count of people with a custom name. |
 | 60 | 2 | unknown | |
-| 62 | 4 | unknown | |
+| 62 | 4 | Bomb Data | Seems to be related to the bombing that happens at some point after hitting 4 (or 3?) stars in the game. |
 | 66 | 4 | unknown | |
+
+I observed that after a bomb was found, or while security was searching, the value in the 4 bytes at offset 62 appeared to be (interpreted as 4 integers): `0, 19, 0, 116`. The bomb was found on floor 9 (19 in the file) and around left offset 116. This was similar for other towers, just with different values.
+
+Before the call came in, the value here was `255, 255, 0, 181`.
 
 ### Timer Notes
 
@@ -43,7 +47,7 @@ The day counter is incremented at midnight, which is 2300 ticks, even if a simul
 | 7:00 to 12:00 | 0 - 400 | 1 tick = 45 seconds simulated |
 | 12:00 to 13:00 | 400 - 1200 | 1 tick = 4.5 seconds simulated |
 | 13:00 to 1:00 | 1200 - 2400 | 1 tick = 36 seconds simulated |
-| 1:00 to 7:00 | 2400 - 2600 | 1 tick = 126 seconds simulated |
+| 1:00 to 7:00 | 2400 - 2600 | 1 tick = 108 seconds simulated |
 
 ### Date Notes
 
@@ -62,17 +66,22 @@ Examples:
 | 4292 | WE, Q=3, Year=358 |
 | 11987 | WE, Q=3, Year=999 |
 
+
+### Unknown Tower Header Data
+
+After the first 70 bytes of the file, there is a 490 Byte segment that is unknown.
+
 ## Floor Data
 
-After the first 68 bytes of the file, this is where actual tower data seems to reside. There is a 490 Byte segment that is unknown
+Immedaiately after tower metadata/header, actual tower data starts at an offset of 560 Bytes.
 
-There are 120 entries (10 underground floors, 100 normal floors and probalby 10 floors for the Cathedral and open space/padding).
+There are 120 repeated entries. This corresponds to: 10 underground floors, 100 normal floors and 10 floors for the Cathedral and open space/padding) above the 100th (in-game) floor.
 
 Each floor has a 6 Byte floor header (which includes a count), that count * 18B with one per unit on the floor and finally a 188B data structure after that, which is for remapping the unit index on the floor, say after a unit is demolished and rebuilt.
 
 ### Floor Header
 
-A floor in 375 tiles long.
+A floor is 375 tiles long.
 | Offset | Length | Use | Notes |
 | --- | --- | --- | --- |
 | 0 | 2 | Unit Count | Total number of units on the floor |
@@ -248,7 +257,7 @@ The next segment of data is 24 entries that are 194 Bytes long, with optional ot
 | 194 | Elevator Data Header | 1 | Always exists. |
 | 480 | Unknown Elevator Data | 1 | Only exists for elevators that have been built. |
 | 120 | Elevator Floor Data? | 2 | Only exists for elevators that have been built. 120 entries is the number of floors, so this is probably related. |
-| 324 | Elevator Floor Data | 1 to 29 | Only exists for elevators that have been built. One entry per floor. A minimum height elevator has 1 entry, a max height elevator has 29. Express elevators have one entry per floor they stop at, so seem to have a maximum of 16 entries. |
+| 324 | Elevator Floor Data | 1 to 30 | Only exists for elevators that have been built. One entry per floor. A minimum height elevator has 1 entry, a max height elevator has 30. Express elevators have one entry per floor they stop at, so seem to have a maximum of 16 entries. |
 | 348 | Elevator Car Data | 1 to 8 | Only exists for elevators that have been built. One entry per floor. An elevator with 1 car has one entry, an elevator with 8 cars has 8 entries. |
 
 _Note:_ Elevators have an entry for floor data for each floor they could stop on, even if it's disabled. This means that an express elevator extending from floor B9 (floor index: 1) for floor 100 (floor index: 109) will have 16 entries, because it can't stop at any floors except the 9 below-ground and the 7 sky lobby floors (1, 15, 30, 45, 60, 75 and 90).
@@ -316,7 +325,9 @@ Format appears to be a 4 Byte header and 80 4B entries.
 | 4 | 160 | Person Index - Down | 40 * 4B indices to the person data segment, for people going down. |
 | 164 | 160 | Person Index - Up | 40 * 4B indices to the person data segment, for people going up. |
 
-The 2 x 40 passenger sections appear to be either all full or all empty, so it could be that old values aren't always cleared out properly. This would also indicate that at most 40 people can wait for an elevator on a floor each direction, which the game seems to cap at.
+People waiting to the left of an elevator want to go up, people on the left want to go down. If a person is in the process of getting onto an elevator, they are not counted in the value. That state seems to be stored in the save somewhere.
+
+The 2 x 40 passenger sections appear to not be emptied after an entry is put in them, so it could be that old values aren't always cleared out properly. Being 40 entries long would also indicate that at most 40 people can wait for an elevator on a floor each direction, which the game seems to cap at.
 
 ### Elevator Car Data
 
@@ -344,3 +355,136 @@ The 2 x 40 passenger sections appear to be either all full or all empty, so it c
 
 Note that after a car is deleted, not all of the data structure is properly cleaned up by the game.
 
+## Short Segments
+
+There are 4 short segments following this.
+
+| Length | Use | Notes |
+| --- | --- | --- |
+| 88 | Unknwon | Appears to be 22x4B entries. |
+| 132 | Finances | 33 x 4B entries, signed. |
+| 12 | Unknown | If 1B ints, values appear to be -1 (255), 0 or 1. But could also be flags or other lengths |
+| 42 | Unknown | appears to be 42x1B ints. |
+
+### Finance Data
+
+| Offset | Length | Use | Notes |
+| --- | --- | --- | --- |
+| 0 | 4 | Income - Office |  |
+| 4 | 4 | Income - Single Room |  |
+| 8 | 4 | Income - Double Room |  |
+| 12 | 4 | Income - Suite |  |
+| 16 | 4 | Income - Shops |  |
+| 20 | 4 | Income - Fast Food |  |
+| 24 | 4 | Income - Restuarant |  |
+| 28 | 4 | Income - Party Hall |  |
+| 32 | 4 | Income - Theater |  |
+| 36 | 4 | Income - Condo |  |
+| 40 | 4 | Total Population |  |
+| 44 | 4 | Population - Office |  |
+| 48 | 4 | Population - Single Room |  |
+| 52 | 4 | Population - Double Room |  |
+| 56 | 4 | Population - Suite |  |
+| 60 | 4 | Population - Shops |  |
+| 64 | 4 | Population - Fast Food |  |
+| 68 | 4 | Population - Restuarant |  |
+| 72 | 4 | Population - Party Hall |  |
+| 76 | 4 | Population - Theater |  |
+| 80 | 4 | Population - Condo |  |
+| 84 | 4 | Total Income |  |
+| 88 | 4 | Expense - Lobby |  |
+| 92 | 4 | Expense - Elevator |  |
+| 96 | 4 | Expense - Express Elevator |  |
+| 100 | 4 | Expense - Service Elevator |  |
+| 104 | 4 | Expense - Escalator |  |
+| 108 | 4 | Expense - Parking Ramp |  |
+| 112 | 4 | Expense - Recycling Center |  |
+| 116 | 4 | Expense - Metro Station |  |
+| 120 | 4 | Expense - Housekeeping |  |
+| 124 | 4 | Expense - Security |  |
+| 128 | 4 | Total Expenses |  |
+
+Note that unlike in other areas of the game, values aren't multiplied by 1,000 for display in the finance window in the game.
+
+## Parking Data
+
+1026 Byte long segment storing data on the maximum 512 parking stalls in a building.
+
+| Offset | Length | Use | Notes |
+| --- | --- | --- | --- |
+| 0 | 2 | Connected Parking Stall Count | Any parking stalls that are inaccessible (with a red X) do not count here. |
+| 2 .. 1024 | 2 | Stall Index | 512 x 2B entries. There should be the same number of sequential indices here as the stall count. 0 otherwise. See notes below. |
+
+Initially, the parking stall index was simply the index of the stall. However, after a stall was removed and added back, it only showed sequential odd indices, with the rest of the entries remaining as 0. However, sequential indices higher than the total number of stalls remained after removal of several stall at the end of the floor, which might indicate stale data.
+
+This could potentially also be a pair of single byte entries, with the second value being some piece of data, but this seems unlikely as it doesn't seem to change, even when occupied by a car. A single byte isn't enough to index into a unit array either, even if the second byte didn't always seem to be zero.
+
+## Short Unknown Data
+
+A 22B long segment. Contents unknown. On several towers checked, appears to be `01` followed by all empty (`00`) bytes.
+
+## Stairs/Escalators Data
+
+64x 10B entries. These exist whether or not any stairs are built.
+
+| Offset | Length | Use | Notes |
+| --- | --- | --- | --- |
+| 0 | 1 | Built | 1 if built, 0 otherwise. |
+| 1 | 1 | Type | See Table Below |
+| 2 | 2 | Left | Tile index of how far left on the floor this starts. |
+| 4 | 2 | Floor | Floor that this starts on (lowest floor). |
+| 6 | 2 | People Count - Up | Count of people heading upwards |
+| 8 | 2 | People Count - Down | Count of people heading downwards. |
+
+**Type Mapping:**
+| ID | Type |
+| --- | --- |
+| 0 | Escalator |
+| 1 | Stairs |
+| 2 | 2 story Escalator |
+| 3 | 2 Story Stairs |
+| 4 | 3 Story Escalator |
+| 5 | 3 Story Stairs |
+
+## Eight Repeated Segments
+
+8x 484 Byte long segments. Unknown contents, but the first 4 Bytes appear to be a header, with the remaining 480 bytes likely being something to do with floors. This could be 120x 4 Byte entries, 240x 2 Byte entries or 480x 1 Byte entries.
+
+If the header is `00 00 FF FF`, the rest of the values are all `00`, so this seems to indicate an empty entry.
+
+## Some More Floor Data
+
+There a 120 byte long segment next. It appears to be one entry per floor, with either `00` or `01` as the value, but what this means is unknown, other than they may cluster around lobbies.
+
+## Security Office Locations
+
+There are 10x 2 Byte entries, and they have the floor index of a security office or -1 (`FF`) if there is no security office built.
+
+## Unknown Repeated 6 Byte Sections
+
+In the towers I checked, there are 528x 6B segments. These appear to be a group of 512 and a group of sixteen, based on their values when empty.
+
+For the first 512, their empty value is `FF 00 00 00 00 00` and for the last 16, `00 00 00 00 FF 00`.
+
+Format of the first 512 entries seems to be:
+| Offset | Length | Use | Notes |
+| --- | --- | --- | --- |
+| 0 | 1 | Type |  |
+| 1 | 1 | Index |  |
+| 2 | 4 | Unknown Value | Could also be 2x 2B |
+
+Index increments by type, but type values can either appear in blocks or be interleaved.
+
+Format of the last 16 entries seems to be:
+| Offset | Length | Use | Notes |
+| --- | --- | --- | --- |
+| 0 | 1 | Unknown | Could be padding. |
+| 1 | 3 | Elevator Reachability Bitflags | See notes below. |
+| 4 | 1 | Floor | Floor of the lobby this entry belongs too |
+| 5 | 1 | Unknown | Could be padding. |
+
+For the elevator reachability bitflags, this seems to indicate that a specific elevator serves a lobby floor. As this is little endian, the rightmost bit indicated the first elevator, and the leftmost bit indicates the last.
+
+An elevator that reaches a potential floor with a lobby behind the elevator, that isn't disabled from reaching that floor has a 1 flag, otherwise a 0.
+
+This also seems to indicate that there will be a maximum of 7 entries here, despite having space for 16. One each for the lobby on floors 10 (1 in game), 24 (15 in game), 39 (30 in game), 54 (45 in game), 69 (60 in game), 84 (75 in game) and 99 (90 in game).
